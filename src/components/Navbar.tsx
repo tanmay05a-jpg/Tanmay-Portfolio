@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, X, Edit3, Phone, Sparkles } from 'lucide-react';
+import { Menu, X, Edit3, Phone, Sparkles, ShieldCheck } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 
 interface NavbarProps {
@@ -8,7 +8,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenBooking }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { profile, isEditMode, setIsEditMode } = usePortfolio();
+  const { profile, isEditMode, setIsEditMode, isAdminAuthenticated, setIsAdminModalOpen } = usePortfolio();
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/95 backdrop-blur-md">
@@ -82,19 +82,21 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBooking }) => {
 
         {/* Zone 3: 1-2 primary actions */}
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsEditMode((prev) => !prev)}
-            className={`hidden sm:inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              isEditMode
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-            }`}
-            title="Toggle Live Portfolio Edit Mode"
-          >
-            <Edit3 className="h-3 w-3" />
-            <span>{isEditMode ? 'Editing Mode' : 'Edit Portfolio'}</span>
-          </button>
+          {isAdminAuthenticated && (
+            <button
+              type="button"
+              onClick={() => setIsEditMode((prev) => !prev)}
+              className={`hidden sm:inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                isEditMode
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Toggle Live Portfolio Edit Mode"
+            >
+              <Edit3 className="h-3 w-3" />
+              <span>{isEditMode ? 'Editing Mode' : 'Edit Portfolio'}</span>
+            </button>
+          )}
 
           <button
             onClick={() => onOpenBooking()}
@@ -171,20 +173,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBooking }) => {
             </a>
 
             <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditMode((prev) => !prev);
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full rounded-lg px-4 py-2 text-center text-xs font-semibold border ${
-                  isEditMode
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                    : 'border-slate-200 bg-slate-50 text-slate-700'
-                }`}
-              >
-                {isEditMode ? 'Exit Edit Mode' : '✎ Enable Edit Mode'}
-              </button>
+              {isAdminAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditMode((prev) => !prev);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full rounded-lg px-4 py-2 text-center text-xs font-semibold border ${
+                    isEditMode
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  {isEditMode ? 'Exit Edit Mode' : '✎ Enable Edit Mode'}
+                </button>
+              )}
 
               <button
                 onClick={() => {

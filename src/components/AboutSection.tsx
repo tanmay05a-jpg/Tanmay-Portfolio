@@ -7,7 +7,7 @@ interface AboutSectionProps {
 }
 
 export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenBooking }) => {
-  const { profile, updateProfile, showToast, isEditMode, setIsEditingText, setTextEditTab } = usePortfolio();
+  const { profile, updateProfile, showToast, isEditMode, setIsEditingText, setTextEditTab, isAdminAuthenticated } = usePortfolio();
   const [isDragging, setIsDragging] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInputValue, setUrlInputValue] = useState('');
@@ -99,32 +99,34 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenBooking }) => 
             </h2>
           </div>
 
-          <div className="mt-4 sm:mt-0 flex items-center gap-3">
-            <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
-              <Camera className="h-3.5 w-3.5 text-blue-600" />
-              <span>{profile.avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </label>
+          {isAdminAuthenticated && (
+            <div className="mt-4 sm:mt-0 flex items-center gap-3">
+              <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
+                <Camera className="h-3.5 w-3.5 text-blue-600" />
+                <span>{profile.avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
 
-            {isEditMode && (
-              <button
-                onClick={() => {
-                  setTextEditTab('about');
-                  setIsEditingText(true);
-                }}
-                className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit Bio</span>
-              </button>
-            )}
-          </div>
+              {isEditMode && (
+                <button
+                  onClick={() => {
+                    setTextEditTab('about');
+                    setIsEditingText(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>Edit Bio</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
@@ -150,16 +152,18 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenBooking }) => 
 
                   {/* Hover Action Overlay */}
                   <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2.5 p-4 z-20">
-                    <label className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-xs font-bold text-slate-900 hover:bg-slate-100 transition-colors shadow-md">
-                      <Upload className="h-3.5 w-3.5 text-blue-600" />
-                      <span>Change Photo</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
+                    {isAdminAuthenticated && (
+                      <label className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-xs font-bold text-slate-900 hover:bg-slate-100 transition-colors shadow-md">
+                        <Upload className="h-3.5 w-3.5 text-blue-600" />
+                        <span>Change Photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
 
                     <div className="flex items-center gap-2">
                       <button
@@ -172,20 +176,22 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenBooking }) => 
                         <span>Zoom</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={handleRemovePhoto}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-rose-900/80 text-rose-200 border border-rose-500/30 px-3 py-1.5 text-xs font-semibold hover:bg-rose-900 transition-colors shadow-md"
-                        title="Remove uploaded photo"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span>Remove</span>
-                      </button>
+                      {isAdminAuthenticated && (
+                        <button
+                          type="button"
+                          onClick={handleRemovePhoto}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-rose-900/80 text-rose-200 border border-rose-500/30 px-3 py-1.5 text-xs font-semibold hover:bg-rose-900 transition-colors shadow-md"
+                          title="Remove uploaded photo"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              ) : (
-                /* 2. Upload Dropzone State when no photo attached */
+              ) : isAdminAuthenticated ? (
+                /* 2. Upload Dropzone State when no photo attached (Admin only) */
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -250,6 +256,26 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenBooking }) => 
 
                   <div className="mt-6 pt-4 border-t border-slate-200/70 text-[10px] text-slate-400 font-mono">
                     PNG · JPG · JPEG · WEBP (Max 10MB)
+                  </div>
+                </div>
+              ) : (
+                /* 2. Sleek Executive Presentation Frame for Visitors */
+                <div className="rounded-xl border border-slate-200 p-6 sm:p-8 flex flex-col items-center justify-center text-center aspect-[4/5] bg-gradient-to-b from-slate-900 to-slate-950 text-white shadow-md">
+                  <div className="h-20 w-20 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-4 text-2xl font-black">
+                    TA
+                  </div>
+                  <h3 className="text-lg font-bold text-white tracking-tight">
+                    {profile.name}
+                  </h3>
+                  <div className="mt-1 text-xs text-blue-400 font-mono">
+                    {profile.role}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-400 max-w-[220px] leading-relaxed">
+                    18 Years of Enterprise Leadership &amp; Commercial Direction
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-slate-800 text-[11px] text-slate-400 font-mono flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Available for Consultations</span>
                   </div>
                 </div>
               )}

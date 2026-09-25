@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Edit3, Plus, Eye, CheckCircle2, ChevronDown, ChevronUp, Download, Film, SlidersHorizontal } from 'lucide-react';
+import {
+  Edit3,
+  Plus,
+  Eye,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Film,
+  SlidersHorizontal,
+  ShieldCheck,
+  Cloud,
+  RefreshCw,
+  LogOut,
+} from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { VideoManagerModal } from './VideoManagerModal';
 
@@ -12,6 +26,11 @@ export const EditToolbar: React.FC = () => {
     setTextEditTab,
     toastMessage,
     projects,
+    isAdminAuthenticated,
+    setIsAdminModalOpen,
+    logoutAdmin,
+    isSyncing,
+    saveToServer,
   } = usePortfolio();
 
   // Auto-collapse on mobile screens so it does not block the mobile preview
@@ -24,16 +43,20 @@ export const EditToolbar: React.FC = () => {
 
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
 
-  // Listen to window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 640 && !isCollapsed) {
-        // Keep it collapsed initially on small screens
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isCollapsed]);
+  // If NOT authenticated as Admin, NEVER show the edit toolbar to public visitors!
+  if (!isAdminAuthenticated) {
+    return (
+      <>
+        {/* Toast Notification Banner (for visitor actions like booking, inquiry) */}
+        {toastMessage && (
+          <div className="fixed top-20 right-4 sm:right-6 z-50 flex items-center gap-2.5 rounded-xl bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-xl border border-slate-800 animate-in fade-in slide-in-from-top-4 duration-200 max-w-[calc(100vw-2rem)]">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span className="truncate">{toastMessage}</span>
+          </div>
+        )}
+      </>
+    );
+  }
 
   const customProjectsCount = projects.filter((p) => p.isCustom || p.badge === 'Client Work' || p.badge === 'Featured Project').length;
 
@@ -47,9 +70,9 @@ export const EditToolbar: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Edit Controls Bar */}
+      {/* Floating Admin Controls Bar (Only visible to verified Tanmay Admin) */}
       <aside
-        aria-label="Portfolio editor controls"
+        aria-label="Admin portfolio controls"
         className={`fixed z-40 transition-all duration-300 ${
           isCollapsed
             ? 'bottom-4 right-4 sm:bottom-5 sm:right-5'
@@ -57,18 +80,18 @@ export const EditToolbar: React.FC = () => {
         }`}
       >
         {isCollapsed ? (
-          /* Collapsed Floating Pill - Never blocks mobile view */
+          /* Collapsed Floating Pill */
           <button
             onClick={() => setIsCollapsed(false)}
-            className="flex items-center gap-2 rounded-full bg-slate-900/95 backdrop-blur-md px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold text-white shadow-xl hover:bg-slate-800 border border-slate-700 transition-all hover:scale-105 group"
-            title="Open Portfolio Management & Edit Bar"
+            className="flex items-center gap-2 rounded-full bg-slate-950/95 backdrop-blur-md px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold text-white shadow-xl hover:bg-slate-900 border border-slate-700 transition-all hover:scale-105 group"
+            title="Open Admin Bar"
           >
-            <Edit3 className="h-3.5 w-3.5 text-blue-400 group-hover:rotate-12 transition-transform" />
-            <span>{isEditMode ? 'Editing Active' : 'Manage / Edit'}</span>
+            <ShieldCheck className="h-4 w-4 text-emerald-400" />
+            <span>Admin Active</span>
             <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
           </button>
         ) : (
-          /* Expanded Bar with Full Mobile Safe-Bounds & Overflow Protection */
+          /* Expanded Bar */
           <div className="w-full sm:w-auto max-w-full sm:max-w-none flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl bg-white/95 backdrop-blur-md p-2.5 sm:p-2 shadow-2xl border border-slate-300 ring-1 ring-black/5 text-xs">
             {/* Top Row on Mobile: Mode Indicator & Toggle */}
             <div className="flex items-center justify-between gap-2 pb-2 sm:pb-0 sm:pr-3 border-b sm:border-b-0 sm:border-r border-slate-200">
@@ -81,8 +104,8 @@ export const EditToolbar: React.FC = () => {
                 <span className="font-bold text-slate-900 text-xs truncate">
                   {isEditMode ? 'Edit Mode ON' : 'Preview Mode'}
                 </span>
-                <span className="text-[11px] text-slate-500 hidden md:inline shrink-0">
-                  ({projects.length} works{customProjectsCount > 0 ? ` · ${customProjectsCount} custom` : ''})
+                <span className="text-[10px] text-slate-500 hidden md:inline shrink-0 font-mono">
+                  ({projects.length} works)
                 </span>
               </div>
 
@@ -111,7 +134,7 @@ export const EditToolbar: React.FC = () => {
               </div>
             </div>
 
-            {/* Actions Row: Horizontally scrollable on narrow mobile screens so no button cuts off */}
+            {/* Actions Row */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 sm:py-0 w-full sm:w-auto justify-start sm:justify-end no-scrollbar">
               <button
                 onClick={() => setIsVideoModalOpen(true)}
@@ -127,7 +150,7 @@ export const EditToolbar: React.FC = () => {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-xs whitespace-nowrap shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Add My Work</span>
+                <span>Add Work</span>
               </button>
 
               <button
@@ -138,18 +161,27 @@ export const EditToolbar: React.FC = () => {
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0"
               >
                 <Edit3 className="h-3 w-3 text-slate-500" />
-                <span>Edit Text</span>
+                <span>Edit Copy</span>
               </button>
 
               <button
-                onClick={() => {
-                  setTextEditTab('json');
-                  setIsEditingText(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 shrink-0"
-                title="Backup / Export JSON"
+                type="button"
+                onClick={() => saveToServer()}
+                disabled={isSyncing}
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors whitespace-nowrap shrink-0"
+                title="Publish changes live to website"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Cloud className={`h-3.5 w-3.5 text-emerald-600 ${isSyncing ? 'animate-bounce' : ''}`} />
+                <span>{isSyncing ? 'Publishing...' : 'Save Live'}</span>
+              </button>
+
+              <button
+                onClick={() => setIsAdminModalOpen(true)}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 shrink-0"
+                title="Admin Security & Password Settings"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+                <span className="hidden lg:inline">Settings</span>
               </button>
 
               {/* Desktop collapse button */}
@@ -173,5 +205,3 @@ export const EditToolbar: React.FC = () => {
     </>
   );
 };
-
-

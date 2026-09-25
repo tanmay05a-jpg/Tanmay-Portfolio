@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Mail, Phone, Calendar, MessageSquare } from 'lucide-react';
+import { ArrowRight, Mail, Phone, Calendar, MessageSquare, Lock, ShieldCheck } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 
 interface FooterProps {
@@ -7,7 +7,7 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ onOpenBooking }) => {
-  const { profile } = usePortfolio();
+  const { profile, isAdminAuthenticated, setIsAdminModalOpen } = usePortfolio();
 
   return (
     <footer className="bg-white text-slate-600 border-t border-slate-200">
@@ -164,8 +164,26 @@ export const Footer: React.FC<FooterProps> = ({ onOpenBooking }) => {
 
         {/* Bottom copyright & unboxed regional metadata */}
         <div className="mt-12 pt-8 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
-          <div>
-            &copy; {new Date().getFullYear()} {profile.name}. All rights reserved.
+          <div className="flex items-center gap-3">
+            <span>&copy; {new Date().getFullYear()} {profile.name}. All rights reserved.</span>
+            <button
+              type="button"
+              onClick={() => setIsAdminModalOpen(true)}
+              className="text-slate-400 hover:text-slate-700 transition-colors inline-flex items-center gap-1 opacity-70 hover:opacity-100"
+              title={isAdminAuthenticated ? 'Admin Control Active' : 'Admin Login (Tanmay Agrawal)'}
+            >
+              {isAdminAuthenticated ? (
+                <>
+                  <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                  <span className="font-semibold text-emerald-700">Admin Active</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3 w-3" />
+                  <span>Admin</span>
+                </>
+              )}
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <span>Direct: {profile.mobile}</span>

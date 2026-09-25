@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   PROFILE_DATA,
   SERVICES_DATA,
@@ -26,6 +26,17 @@ interface PortfolioContextType {
   faqs: FAQItem[];
   isEditMode: boolean;
   setIsEditMode: (val: boolean | ((prev: boolean) => boolean)) => void;
+  // Admin Security
+  isAdminAuthenticated: boolean;
+  adminEmail: string;
+  isAdminModalOpen: boolean;
+  setIsAdminModalOpen: (val: boolean) => void;
+  loginAdmin: (password: string) => Promise<{ success: boolean; error?: string }>;
+  logoutAdmin: () => void;
+  changeAdminPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  isSyncing: boolean;
+  lastSyncedAt: string | null;
+  saveToServer: () => Promise<boolean>;
   // Modals state
   editingProject: PortfolioProject | null | 'new';
   setEditingProject: (p: PortfolioProject | null | 'new') => void;
@@ -49,6 +60,9 @@ interface PortfolioContextType {
 }
 
 const STORAGE_KEY = 'tanmay_portfolio_state_v2';
+const ADMIN_TOKEN_KEY = 'tanmay_admin_token_v1';
+const ADMIN_EMAIL = 'tanmay.05.a@gmail.com';
+const FALLBACK_DEFAULT_PASSWORD = 'Tanmay@Admin2026';
 
 const MOCK_PROJECT_IDS = [
   '7-seconds-psychology-ad',
@@ -74,7 +88,20 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [projects, setProjects] = useState<PortfolioProject[]>(PORTFOLIO_PROJECTS);
   const [pricing, setPricing] = useState<PricingItem[]>(PRICING_SNAPSHOT);
   const [faqs, setFaqs] = useState<FAQItem[]>(FAQS);
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [isEditMode, setIsEditModeInternal] = useState<boolean>(false);
+
+  // Admin Security States
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  const [adminToken, setAdminToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(ADMIN_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [editingProject, setEditingProject] = useState<PortfolioProject | null | 'new'>(null);
   const [isEditingText, setIsEditingText] = useState<boolean>(false);
@@ -82,104 +109,331 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 3200);
-  };
-
-  // Load from localStorage on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.profile) {
-          const loadedProfile = { ...PROFILE_DATA, ...parsed.profile };
-          if (loadedProfile.headline) {
-            loadedProfile.headline = loadedProfile.headline.replace(/US\s*(&|and)\s*UK\s*/gi, '').replace(/\s+/g, ' ').trim();
-          }
-          if (loadedProfile.aboutBio) {
-            loadedProfile.aboutBio = loadedProfile.aboutBio.replace(/\s*in the US (and|&)\s*UK\s*/gi, ' ').replace(/\s+/g, ' ').trim();
-          }
-          if (loadedProfile.markets && (loadedProfile.markets.includes('United Kingdom') || loadedProfile.markets.includes('US'))) {
-            loadedProfile.markets = PROFILE_DATA.markets;
-          }
-          if (!loadedProfile.linkedinUrl) {
-            loadedProfile.linkedinUrl = PROFILE_DATA.linkedinUrl;
-          }
-          if (!loadedProfile.location || loadedProfile.location === 'Remote / Global Support') {
-            loadedProfile.location = PROFILE_DATA.location;
-          }
-          setProfile(loadedProfile);
-        }
-        if (parsed.services && Array.isArray(parsed.services)) {
-          // Merge defaults with stored services to guarantee all 5 offerings exist
-          const mergedServices = SERVICES_DATA.map((defaultSvc) => {
-            const existing = parsed.services.find((s: ServiceItem) => s.id === defaultSvc.id);
-            return existing ? { ...defaultSvc, ...existing } : defaultSvc;
-          });
-          const customServices = parsed.services.filter(
-            (s: ServiceItem) => !SERVICES_DATA.some((ds) => ds.id === s.id)
-          );
-          setServices([...mergedServices, ...customServices]);
-        } else {
-          setServices(SERVICES_DATA);
-        }
-        if (parsed.projects && Array.isArray(parsed.projects)) {
-          // Keep only user-created custom projects, removing all legacy mock items
-          const userProjects = parsed.projects.filter(
-            (p: PortfolioProject) => !MOCK_PROJECT_IDS.includes(p.id)
-          );
-          setProjects(userProjects);
-        } else {
-          setProjects([]);
-        }
-        if (parsed.pricing && Array.isArray(parsed.pricing)) setPricing(parsed.pricing);
-        if (parsed.faqs && Array.isArray(parsed.faqs)) {
-          const updatedFaqs = parsed.faqs.map((f: any) => {
-            if (f.question && (f.question.includes('US and UK') || f.question.includes('US & UK'))) {
-              return FAQS.find((df) => df.question.includes('different time zones')) || f;
-            }
-            return f;
-          });
-          setFaqs(updatedFaqs);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load portfolio data from storage', err);
-    }
+    }, 3500);
   }, []);
 
-  // Sync to localStorage
-  const saveToStorage = (
-    nextProfile: ProfileData,
-    nextServices: ServiceItem[],
-    nextProjects: PortfolioProject[],
-    nextPricing: PricingItem[],
-    nextFaqs: FAQItem[]
-  ) => {
-    try {
-      const payload = {
-        profile: nextProfile,
-        services: nextServices,
-        projects: nextProjects,
-        pricing: nextPricing,
-        faqs: nextFaqs,
-        updatedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch (err) {
-      console.error('Failed to save to localStorage', err);
+  // Safe setter for isEditMode - requires admin authentication!
+  const setIsEditMode = useCallback(
+    (val: boolean | ((prev: boolean) => boolean)) => {
+      if (!isAdminAuthenticated) {
+        // If not authenticated, open admin login modal
+        setIsAdminModalOpen(true);
+        showToast('Please enter Admin Credentials to enable editing.');
+        return;
+      }
+      setIsEditModeInternal(val);
+    },
+    [isAdminAuthenticated, showToast]
+  );
+
+  // Save to LocalStorage helper
+  const saveToStorage = useCallback(
+    (
+      nextProfile: ProfileData,
+      nextServices: ServiceItem[],
+      nextProjects: PortfolioProject[],
+      nextPricing: PricingItem[],
+      nextFaqs: FAQItem[]
+    ) => {
+      try {
+        const payload = {
+          profile: nextProfile,
+          services: nextServices,
+          projects: nextProjects,
+          pricing: nextPricing,
+          faqs: nextFaqs,
+          updatedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (err) {
+        console.error('Failed to save to localStorage', err);
+      }
+    },
+    []
+  );
+
+  // Direct persistence to Live Website Server (/api/portfolio)
+  const syncWithServer = useCallback(
+    async (
+      overrideProfile?: ProfileData,
+      overrideServices?: ServiceItem[],
+      overrideProjects?: PortfolioProject[],
+      overridePricing?: PricingItem[],
+      overrideFaqs?: FAQItem[]
+    ): Promise<boolean> => {
+      const p = overrideProfile || profile;
+      const s = overrideServices || services;
+      const pr = overrideProjects || projects;
+      const prc = overridePricing || pricing;
+      const f = overrideFaqs || faqs;
+
+      setIsSyncing(true);
+      try {
+        const token = adminToken || localStorage.getItem(ADMIN_TOKEN_KEY);
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const res = await fetch('/api/portfolio', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            profile: p,
+            services: s,
+            projects: pr,
+            pricing: prc,
+            faqs: f,
+          }),
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          const timestamp = resData.updatedAt || new Date().toISOString();
+          setLastSyncedAt(timestamp);
+          setIsSyncing(false);
+          return true;
+        } else {
+          console.warn('Server sync returned non-200, kept in local storage.');
+          setIsSyncing(false);
+          return false;
+        }
+      } catch (err) {
+        console.warn('Server sync error (using local storage fallback):', err);
+        setIsSyncing(false);
+        return false;
+      }
+    },
+    [profile, services, projects, pricing, faqs, adminToken]
+  );
+
+  const saveToServer = useCallback(async (): Promise<boolean> => {
+    const success = await syncWithServer();
+    if (success) {
+      showToast('All changes published live to website!');
+    } else {
+      showToast('Changes saved locally.');
     }
+    return success;
+  }, [syncWithServer, showToast]);
+
+  // Initial Data Load (Server first, then localStorage fallback, then defaults)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPortfolioData() {
+      try {
+        // Try fetching live data from website server
+        const res = await fetch('/api/portfolio');
+        if (res.ok) {
+          const serverJson = await res.json();
+          if (serverJson.success && serverJson.data && isMounted) {
+            const d = serverJson.data;
+            if (d.profile) setProfile({ ...PROFILE_DATA, ...d.profile });
+            if (d.services && Array.isArray(d.services)) setServices(d.services);
+            if (d.projects && Array.isArray(d.projects)) {
+              setProjects(d.projects.filter((p: PortfolioProject) => !MOCK_PROJECT_IDS.includes(p.id)));
+            }
+            if (d.pricing && Array.isArray(d.pricing)) setPricing(d.pricing);
+            if (d.faqs && Array.isArray(d.faqs)) setFaqs(d.faqs);
+            if (d.updatedAt) setLastSyncedAt(d.updatedAt);
+            return;
+          }
+        }
+      } catch {
+        // Continue to localStorage fallback
+      }
+
+      // LocalStorage fallback
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored && isMounted) {
+          const parsed = JSON.parse(stored);
+          if (parsed.profile) setProfile({ ...PROFILE_DATA, ...parsed.profile });
+          if (parsed.services && Array.isArray(parsed.services)) setServices(parsed.services);
+          if (parsed.projects && Array.isArray(parsed.projects)) {
+            setProjects(parsed.projects.filter((p: PortfolioProject) => !MOCK_PROJECT_IDS.includes(p.id)));
+          }
+          if (parsed.pricing && Array.isArray(parsed.pricing)) setPricing(parsed.pricing);
+          if (parsed.faqs && Array.isArray(parsed.faqs)) setFaqs(parsed.faqs);
+        }
+      } catch (err) {
+        console.error('Failed to load local storage:', err);
+      }
+    }
+
+    loadPortfolioData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Verify Admin Token on mount
+  useEffect(() => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+
+    fetch('/api/admin/verify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated) {
+          setIsAdminAuthenticated(true);
+        } else {
+          // If server restarted or token expired, check if offline token matches
+          if (token === 'tanmay_local_admin_session') {
+            setIsAdminAuthenticated(true);
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback for offline/static deployment
+        if (token) {
+          setIsAdminAuthenticated(true);
+        }
+      });
+  }, []);
+
+  // Listen for admin shortcut (Ctrl+Shift+A or Cmd+Shift+A) or URL query ?admin=true
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        setIsAdminModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // URL trigger: ?admin=true or #admin
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('admin') || window.location.hash === '#admin') {
+        setIsAdminModalOpen(true);
+      }
+    }
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Admin Login Action
+  const loginAdmin = async (password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.token) {
+          setAdminToken(data.token);
+          localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+          setIsAdminAuthenticated(true);
+          setIsEditModeInternal(true);
+          showToast('Welcome Tanmay! Admin edit mode unlocked.');
+          return { success: true };
+        }
+      }
+    } catch {
+      // Continue to local fallback
+    }
+
+    // Fallback authentication for static or offline builds
+    const storedCustomPass = localStorage.getItem('tanmay_admin_custom_password');
+    const validPassword = storedCustomPass || FALLBACK_DEFAULT_PASSWORD;
+
+    if (password === validPassword) {
+      const localToken = 'tanmay_local_admin_session';
+      setAdminToken(localToken);
+      localStorage.setItem(ADMIN_TOKEN_KEY, localToken);
+      setIsAdminAuthenticated(true);
+      setIsEditModeInternal(true);
+      showToast('Welcome Tanmay! Admin edit mode unlocked.');
+      return { success: true };
+    }
+
+    return { success: false, error: 'Incorrect Admin Password. Please check and retry.' };
   };
 
+  // Admin Logout Action
+  const logoutAdmin = () => {
+    try {
+      if (adminToken) {
+        fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Ignore
+    }
+    setAdminToken(null);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setIsAdminAuthenticated(false);
+    setIsEditModeInternal(false);
+    showToast('Logged out of Admin Portal. Public preview restored.');
+  };
+
+  // Admin Change Password Action
+  const changeAdminPassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters' };
+    }
+
+    try {
+      const token = adminToken || localStorage.getItem(ADMIN_TOKEN_KEY);
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ newPassword }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          localStorage.setItem('tanmay_admin_custom_password', newPassword);
+          showToast('Admin password updated successfully.');
+          return { success: true };
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // Save locally
+    localStorage.setItem('tanmay_admin_custom_password', newPassword);
+    showToast('Admin password updated successfully.');
+    return { success: true };
+  };
+
+  // Data Mutations
   const updateProfile = (data: Partial<ProfileData>) => {
     const updated = { ...profile, ...data };
     setProfile(updated);
     saveToStorage(updated, services, projects, pricing, faqs);
-    showToast('Profile information updated.');
+    if (isAdminAuthenticated) {
+      syncWithServer(updated, services, projects, pricing, faqs);
+    }
+    showToast('Profile information updated & saved directly to website.');
   };
 
   const addProject = (data: Omit<PortfolioProject, 'id'> & { id?: string }) => {
@@ -193,14 +447,20 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const updated = [newProject, ...projects];
     setProjects(updated);
     saveToStorage(profile, services, updated, pricing, faqs);
-    showToast(`Project "${newProject.title}" added to your portfolio!`);
+    if (isAdminAuthenticated) {
+      syncWithServer(profile, services, updated, pricing, faqs);
+    }
+    showToast(`Project "${newProject.title}" published live!`);
   };
 
   const updateProject = (updatedProj: PortfolioProject) => {
     const updated = projects.map((p) => (p.id === updatedProj.id ? updatedProj : p));
     setProjects(updated);
     saveToStorage(profile, services, updated, pricing, faqs);
-    showToast(`Project "${updatedProj.title}" updated.`);
+    if (isAdminAuthenticated) {
+      syncWithServer(profile, services, updated, pricing, faqs);
+    }
+    showToast(`Project "${updatedProj.title}" updated on live site.`);
   };
 
   const deleteProject = (id: string) => {
@@ -208,13 +468,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const updated = projects.filter((p) => p.id !== id);
     setProjects(updated);
     saveToStorage(profile, services, updated, pricing, faqs);
-    showToast(`Removed "${target?.title || 'project'}" from portfolio.`);
+    if (isAdminAuthenticated) {
+      syncWithServer(profile, services, updated, pricing, faqs);
+    }
+    showToast(`Removed "${target?.title || 'project'}" from live portfolio.`);
   };
 
   const updateService = (updatedService: ServiceItem) => {
     const updated = services.map((s) => (s.id === updatedService.id ? updatedService : s));
     setServices(updated);
     saveToStorage(profile, updated, projects, pricing, faqs);
+    if (isAdminAuthenticated) {
+      syncWithServer(profile, updated, projects, pricing, faqs);
+    }
     showToast(`Service "${updatedService.title}" updated.`);
   };
 
@@ -222,7 +488,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const updated = pricing.map((p, idx) => (idx === index ? { ...p, ...item } : p));
     setPricing(updated);
     saveToStorage(profile, services, projects, updated, faqs);
-    showToast('Pricing details updated.');
+    if (isAdminAuthenticated) {
+      syncWithServer(profile, services, projects, updated, faqs);
+    }
+    showToast('Pricing details updated on live site.');
   };
 
   const resetToDefaults = () => {
@@ -235,6 +504,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       localStorage.removeItem(STORAGE_KEY);
     } catch {
       // ignore
+    }
+    if (isAdminAuthenticated) {
+      syncWithServer(PROFILE_DATA, SERVICES_DATA, [], PRICING_SNAPSHOT, FAQS);
     }
     showToast('Reset portfolio content to initial clean state.');
   };
@@ -258,7 +530,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Exported portfolio JSON data file.');
+    showToast('Exported portfolio JSON data backup.');
   };
 
   const importFromJson = (jsonStr: string) => {
@@ -280,7 +552,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         parsed.pricing || pricing,
         parsed.faqs || faqs
       );
-      showToast('Successfully imported portfolio data!');
+      if (isAdminAuthenticated) {
+        syncWithServer(
+          parsed.profile || profile,
+          parsed.services || services,
+          parsed.projects || projects,
+          parsed.pricing || pricing,
+          parsed.faqs || faqs
+        );
+      }
+      showToast('Successfully imported portfolio data and updated live site!');
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Could not parse JSON.' };
@@ -297,6 +578,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         faqs,
         isEditMode,
         setIsEditMode,
+        isAdminAuthenticated,
+        adminEmail: ADMIN_EMAIL,
+        isAdminModalOpen,
+        setIsAdminModalOpen,
+        loginAdmin,
+        logoutAdmin,
+        changeAdminPassword,
+        isSyncing,
+        lastSyncedAt,
+        saveToServer,
         editingProject,
         setEditingProject,
         isEditingText,

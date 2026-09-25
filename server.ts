@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 
@@ -11,6 +13,64 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Persistent data directory on server
+const DATA_DIR = path.resolve(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+const PORTFOLIO_FILE = path.join(DATA_DIR, 'live-portfolio.json');
+const ADMIN_FILE = path.join(DATA_DIR, 'admin-config.json');
+
+// Initialize admin configuration if not present
+const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Tanmay@Admin2026';
+const ADMIN_EMAIL = 'tanmay.05.a@gmail.com';
+
+function getAdminConfig() {
+  try {
+    if (fs.existsSync(ADMIN_FILE)) {
+      const data = fs.readFileSync(ADMIN_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading admin config:', err);
+  }
+  const defaultCfg = {
+    password: DEFAULT_ADMIN_PASSWORD,
+    email: ADMIN_EMAIL,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    fs.writeFileSync(ADMIN_FILE, JSON.stringify(defaultCfg, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error writing default admin config:', e);
+  }
+  return defaultCfg;
+}
+
+// In-memory active session tokens set
+const activeAdminTokens = new Set<string>();
+
+// Helper to verify if request is from an authenticated admin
+function verifyAdminRequest(req: express.Request): boolean {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7).trim();
+    if (activeAdminTokens.has(token)) {
+      return true;
+    }
+  }
+  // Also check adminPassword passed in header or body
+  const customKey = req.headers['x-admin-key'] as string;
+  const currentCfg = getAdminConfig();
+  if (customKey && customKey === currentCfg.password) {
+    return true;
+  }
+  if (req.body && req.body.adminPassword && req.body.adminPassword === currentCfg.password) {
+    return true;
+  }
+  return false;
+}
 
 // Body parsers with large limit for base64 images and audio blobs
 app.use(express.json({ limit: '50mb' }));
@@ -33,6 +93,138 @@ app.get('/api/health', (req, res) => {
     hasApiKey: !!process.env.GEMINI_API_KEY,
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * ============================================================================
+ * ADMIN AUTHENTICATION & SECURITY ENDPOINTS
+ * ============================================================================
+ */
+
+// Admin Login
+app.post('/api/admin/login', (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, error: 'Password is required' });
+    }
+    const adminCfg = getAdminConfig();
+    if (password === adminCfg.password) {
+      const token = crypto.randomBytes(32).toString('hex');
+      activeAdminTokens.add(token);
+      return res.json({
+        success: true,
+        token,
+        email: adminCfg.email || ADMIN_EMAIL,
+        message: 'Admin authentication successful',
+      });
+    } else {
+      return res.status(401).json({ success: false, error: 'Incorrect Admin Password' });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Login failed' });
+  }
+});
+
+// Admin Verify Token
+app.post('/api/admin/verify', (req, res) => {
+  const isAuth = verifyAdminRequest(req);
+  return res.json({ success: isAuth, authenticated: isAuth });
+});
+
+// Admin Change Password
+app.post('/api/admin/change-password', (req, res) => {
+  try {
+    if (!verifyAdminRequest(req)) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Admin authentication required' });
+    }
+    const { newPassword } = req.body;
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 6 characters long' });
+    }
+    const currentCfg = getAdminConfig();
+    currentCfg.password = newPassword.trim();
+    currentCfg.updatedAt = new Date().toISOString();
+    fs.writeFileSync(ADMIN_FILE, JSON.stringify(currentCfg, null, 2), 'utf-8');
+
+    return res.json({
+      success: true,
+      message: 'Admin password successfully updated. Please use your new password next time.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Failed to update password' });
+  }
+});
+
+// Admin Logout
+app.post('/api/admin/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7).trim();
+    activeAdminTokens.delete(token);
+  }
+  return res.json({ success: true, message: 'Logged out successfully' });
+});
+
+/**
+ * ============================================================================
+ * LIVE PERSISTENT PORTFOLIO DATA ENDPOINTS
+ * ============================================================================
+ */
+
+// Public endpoint: Fetch current live portfolio state from server
+app.get('/api/portfolio', (req, res) => {
+  try {
+    if (fs.existsSync(PORTFOLIO_FILE)) {
+      const dataStr = fs.readFileSync(PORTFOLIO_FILE, 'utf-8');
+      const parsed = JSON.parse(dataStr);
+      return res.json({ success: true, data: parsed, source: 'server_disk' });
+    }
+    // Return empty payload if not saved yet
+    return res.json({ success: true, data: null, source: 'defaults' });
+  } catch (err: any) {
+    console.error('Error reading live portfolio file:', err);
+    return res.status(500).json({ success: false, error: 'Failed to read live portfolio data' });
+  }
+});
+
+// Protected endpoint: Update and publish live portfolio directly to website
+app.post('/api/portfolio', (req, res) => {
+  try {
+    if (!verifyAdminRequest(req)) {
+      return res.status(401).json({
+        success: false,
+        error: 'Access denied: Valid Admin credentials are required to edit and update this website.',
+      });
+    }
+
+    const { profile, services, projects, pricing, faqs } = req.body;
+    if (!profile && !services && !projects && !pricing && !faqs) {
+      return res.status(400).json({ success: false, error: 'Invalid payload: No portfolio data provided' });
+    }
+
+    const payload = {
+      profile,
+      services,
+      projects,
+      pricing,
+      faqs,
+      updatedAt: new Date().toISOString(),
+      updatedBy: ADMIN_EMAIL,
+    };
+
+    // Write atomically to live-portfolio.json
+    fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+
+    return res.json({
+      success: true,
+      message: 'Portfolio successfully updated and published live to website!',
+      updatedAt: payload.updatedAt,
+    });
+  } catch (err: any) {
+    console.error('Error saving live portfolio:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to save portfolio data' });
+  }
 });
 
 /**

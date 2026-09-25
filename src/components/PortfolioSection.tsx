@@ -29,7 +29,7 @@ interface PortfolioSectionProps {
 }
 
 export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBooking }) => {
-  const { projects, isEditMode, setEditingProject, deleteProject, profile } = usePortfolio();
+  const { projects, isEditMode, setEditingProject, deleteProject, profile, isAdminAuthenticated } = usePortfolio();
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
@@ -347,26 +347,49 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
               Attach your commercial video ads, video reels, case studies, or system workflows. You can upload video files (.mp4/.webm/.mov) directly or embed video links.
             </p>
 
-            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3 w-full max-w-md mx-auto">
-              <button
-                type="button"
-                onClick={() => setEditingProject('new')}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-blue-500 shadow-sm hover:shadow-md transition-all"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Attach New Video / Work</span>
-              </button>
-
-              {activeCategory !== 'all' && (
+            {isAdminAuthenticated ? (
+              <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3 w-full max-w-md mx-auto">
                 <button
                   type="button"
-                  onClick={() => setActiveCategory('all')}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                  onClick={() => setEditingProject('new')}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-blue-500 shadow-sm hover:shadow-md transition-all"
                 >
-                  <span>View All Works</span>
+                  <Plus className="h-4 w-4" />
+                  <span>Attach New Video / Work</span>
                 </button>
-              )}
-            </div>
+
+                {activeCategory !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveCategory('all')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                  >
+                    <span>View All Works</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3 w-full max-w-md mx-auto">
+                <button
+                  type="button"
+                  onClick={() => (onOpenBooking ? onOpenBooking() : undefined)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-blue-500 shadow-sm hover:shadow-md transition-all group"
+                >
+                  <span>Request Custom Video or Strategy</span>
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+
+                {activeCategory !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveCategory('all')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                  >
+                    <span>View All Works</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Quick format guide pill badges */}
             <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-200/80 flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-slate-500">
@@ -405,48 +428,50 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
                       <span className="truncate">{project.serviceCategory}</span>
                     </div>
 
-                    {/* Quick Video & Edit actions */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedProject(project);
-                          setIsVideoManagerOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
-                        title="Upload or Change Video"
-                        aria-label="Upload or change video"
-                      >
-                        <Film className="h-3 w-3" />
-                        <span>Video</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingProject(project);
-                        }}
-                        className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                        title="Edit Project Details"
-                        aria-label="Edit project"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                      </button>
-                      {project.isCustom && (
+                    {/* Quick Video & Edit actions (Only visible when logged in as Admin and in Edit Mode) */}
+                    {isAdminAuthenticated && isEditMode && (
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm(`Delete "${project.title}"?`)) {
-                              deleteProject(project.id);
-                            }
+                            setSelectedProject(project);
+                            setIsVideoManagerOpen(true);
                           }}
-                          className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          title="Delete Project"
-                          aria-label="Delete project"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                          title="Upload or Change Video"
+                          aria-label="Upload or change video"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Film className="h-3 w-3" />
+                          <span>Video</span>
                         </button>
-                      )}
-                    </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProject(project);
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                          title="Edit Project Details"
+                          aria-label="Edit project"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                        {project.isCustom && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Delete "${project.title}"?`)) {
+                                deleteProject(project.id);
+                              }
+                            }}
+                            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete Project"
+                            aria-label="Delete project"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">

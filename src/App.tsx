@@ -12,6 +12,7 @@ import { BookingModal } from './components/BookingModal';
 import { ProjectEditorModal } from './components/ProjectEditorModal';
 import { TextEditorModal } from './components/TextEditorModal';
 import { EditToolbar } from './components/EditToolbar';
+import { AdminAuthModal } from './components/AdminAuthModal';
 
 function PortfolioApp() {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -77,6 +78,9 @@ function PortfolioApp() {
 
       {/* Copy / Text & Bio Editor Modal */}
       <TextEditorModal />
+
+      {/* Admin Security & Authentication Modal */}
+      <AdminAuthModal />
 
       {/* Floating Portfolio Manager & Live Edit Toolbar */}
       <EditToolbar />
