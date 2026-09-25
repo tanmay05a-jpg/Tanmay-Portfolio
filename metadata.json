@@ -1,0 +1,8 @@
+{
+  "name": "Tanmay Agrawal | AI Product Consultant",
+  "description": "Professional portfolio for Tanmay Agrawal, independent AI freelancer and product consultant helping businesses turn AI into measurable results.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
