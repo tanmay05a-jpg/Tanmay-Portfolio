@@ -15,8 +15,88 @@ import {
   Film,
   Sliders,
   Layers,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { PortfolioProject } from '../data/portfolioData';
+
+export interface ParsedVideoSource {
+  type: 'youtube' | 'vimeo' | 'loom' | 'googledrive' | 'direct' | 'procedural';
+  embedUrl?: string;
+  directUrl?: string;
+  label: string;
+}
+
+export function parseVideoSource(rawUrl?: string): ParsedVideoSource {
+  if (!rawUrl || !rawUrl.trim()) {
+    return { type: 'procedural', label: 'Procedural Simulation' };
+  }
+  const url = rawUrl.trim();
+
+  // 1. YouTube (watch?v=, youtu.be/, shorts/, embed/)
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    const videoId = ytMatch[1];
+    return {
+      type: 'youtube',
+      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&playsinline=1&modestbranding=1`,
+      label: 'YouTube Video',
+    };
+  }
+
+  // 2. Vimeo (vimeo.com/ID or player.vimeo.com/video/ID)
+  const vimeoMatch = url.match(/(?:vimeo\.com\/|player\.vimeo\.com\/video\/)(\d+)/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    const videoId = vimeoMatch[1];
+    return {
+      type: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${videoId}?autoplay=1&playsinline=1&title=0&byline=0`,
+      label: 'Vimeo Video',
+    };
+  }
+
+  // 3. Loom (loom.com/share/ID or loom.com/embed/ID)
+  const loomMatch = url.match(/loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/i);
+  if (loomMatch && loomMatch[1]) {
+    const videoId = loomMatch[1];
+    return {
+      type: 'loom',
+      embedUrl: `https://www.loom.com/embed/${videoId}?autoplay=1&hide_owner=true&hide_share=true&hide_title=true&hideEmbedTopBar=true`,
+      label: 'Loom Video',
+    };
+  }
+
+  // 4. Google Drive (drive.google.com/file/d/ID/...)
+  const gdriveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdriveMatch && gdriveMatch[1]) {
+    const fileId = gdriveMatch[1];
+    return {
+      type: 'googledrive',
+      embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+      label: 'Google Drive Video',
+    };
+  }
+
+  // 5. Dropbox direct link conversion
+  if (url.includes('dropbox.com')) {
+    let directDropbox = url.replace('dl=0', 'raw=1').replace('?dl=0', '?raw=1');
+    if (!directDropbox.includes('raw=1')) {
+      directDropbox += (directDropbox.includes('?') ? '&' : '?') + 'raw=1';
+    }
+    return {
+      type: 'direct',
+      directUrl: directDropbox,
+      label: 'Dropbox Video Stream',
+    };
+  }
+
+  // 6. Direct Video URL or Uploaded Video (.mp4, .webm, .mov, /api/media/..., data:, blob:)
+  return {
+    type: 'direct',
+    directUrl: url,
+    label: url.startsWith('/api/media/') ? 'Uploaded Video File' : 'Direct Video Stream',
+  };
+}
 
 interface CommercialVideoPlayerProps {
   project: PortfolioProject;
@@ -40,6 +120,8 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
   const gainNodeRef = useRef<GainNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  const parsedSource = parseVideoSource(project.videoUrl);
+
   // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(autoPlay);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -49,7 +131,46 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
   const [showHud, setShowHud] = useState<boolean>(true);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>(project.aspectRatio || '16:9');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [showNativeControls, setShowNativeControls] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset errors and sync state when project or video URL changes
+  useEffect(() => {
+    setVideoError(null);
+    setCurrentTime(0);
+    setIsPlaying(autoPlay);
+  }, [project.id, project.videoUrl, autoPlay]);
+
+  // Synchronize native HTML5 <video> play/pause with isPlaying state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || parsedSource.type !== 'direct') return;
+
+    if (isPlaying) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Playback with audio blocked by browser; muting and retrying:', err);
+          video.muted = true;
+          setIsMuted(true);
+          video.play().catch((e) => {
+            console.error('Video play error:', e);
+            setIsPlaying(false);
+          });
+        });
+      }
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, parsedSource.type, parsedSource.directUrl]);
+
+  // Synchronize mute with native video
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
 
   // Sync duration from project if available
   useEffect(() => {
@@ -145,30 +266,9 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
     };
   }, []);
 
-  // Check if project has direct video URL or YouTube/Vimeo embed
-  const isDirectVideo = !!project.videoUrl && !project.videoUrl.includes('youtube.com') && !project.videoUrl.includes('youtu.be') && !project.videoUrl.includes('vimeo.com');
-  const isYoutube = !!project.videoUrl && (project.videoUrl.includes('youtube.com') || project.videoUrl.includes('youtu.be'));
-  const isVimeo = !!project.videoUrl && project.videoUrl.includes('vimeo.com');
-
-  const getYoutubeEmbedUrl = (url: string) => {
-    let id = '';
-    if (url.includes('youtu.be/')) {
-      id = url.split('youtu.be/')[1]?.split('?')[0] || '';
-    } else if (url.includes('v=')) {
-      id = url.split('v=')[1]?.split('&')[0] || '';
-    }
-    return id ? `https://www.youtube.com/embed/${id}?autoplay=${isPlaying ? 1 : 0}&mute=${isMuted ? 1 : 0}&controls=1&rel=0` : url;
-  };
-
-  const getVimeoEmbedUrl = (url: string) => {
-    const match = url.match(/vimeo\.com\/(\d+)/);
-    const id = match ? match[1] : '';
-    return id ? `https://player.vimeo.com/video/${id}?autoplay=${isPlaying ? 1 : 0}&muted=${isMuted ? 1 : 0}` : url;
-  };
-
   // Playback timer ticker for procedural canvas mode
   useEffect(() => {
-    if (isDirectVideo || isYoutube || isVimeo) return;
+    if (parsedSource.type !== 'procedural') return;
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
@@ -182,11 +282,11 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
     }, 100);
 
     return () => clearInterval(interval);
-  }, [isPlaying, duration, isDirectVideo, isYoutube, isVimeo]);
+  }, [isPlaying, duration, parsedSource.type]);
 
   // Procedural Canvas Cinematography Engine
   useEffect(() => {
-    if (isDirectVideo || isYoutube || isVimeo) return;
+    if (parsedSource.type !== 'procedural') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -246,7 +346,7 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [project.id, currentTime, duration, isPlaying, showHud, isDirectVideo, isYoutube, isVimeo]);
+  }, [project.id, currentTime, duration, isPlaying, showHud, parsedSource.type]);
 
   // SCENE 1: The 7-Second Rule (Split Screen Behavioral Psychology)
   const renderPsychologyAdScene = (
@@ -972,6 +1072,26 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const handlePlayToggle = () => {
+    if (parsedSource.type === 'direct' && videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        setIsPlaying(true);
+        videoRef.current.play().catch(() => {
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            setIsMuted(true);
+            videoRef.current.play().catch(() => {});
+          }
+        });
+      }
+    } else {
+      setIsPlaying(!isPlaying);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -980,68 +1100,126 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
       {/* Video Content Window */}
       <div
         className={`relative w-full overflow-hidden flex items-center justify-center bg-black ${
-          aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[520px] mx-auto' : 'aspect-video'
+          aspectRatio === '9:16' ? 'aspect-[9/16] max-h-[540px] mx-auto' : 'aspect-video'
         }`}
       >
-        {/* Case 1: YouTube Embed */}
-        {isYoutube && (
-          <iframe
-            src={getYoutubeEmbedUrl(project.videoUrl!)}
-            title={project.title}
-            className="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        )}
+        {/* Case 1: Embeddable Video Platforms (YouTube, Vimeo, Loom, Google Drive) */}
+        {(parsedSource.type === 'youtube' ||
+          parsedSource.type === 'vimeo' ||
+          parsedSource.type === 'loom' ||
+          parsedSource.type === 'googledrive') &&
+          parsedSource.embedUrl && (
+            <iframe
+              src={parsedSource.embedUrl}
+              title={project.title}
+              className="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          )}
 
-        {/* Case 2: Vimeo Embed */}
-        {isVimeo && (
-          <iframe
-            src={getVimeoEmbedUrl(project.videoUrl!)}
-            title={project.title}
-            className="w-full h-full border-0"
-            allow="autoplay; fullscreen; picture-in-picture"
-            allowFullScreen
-          />
-        )}
-
-        {/* Case 3: Direct MP4 / WebM Video Element */}
-        {isDirectVideo && (
+        {/* Case 2: Direct MP4 / WebM / MOV / Media URL */}
+        {parsedSource.type === 'direct' && parsedSource.directUrl && (
           <video
             ref={videoRef}
-            src={project.videoUrl}
-            poster={project.videoPoster}
+            src={parsedSource.directUrl}
+            poster={project.videoPoster || project.imageUrl}
             playsInline
+            preload="auto"
             muted={isMuted}
-            autoPlay={isPlaying}
+            controls={showNativeControls}
+            onClick={() => {
+              if (!showNativeControls) handlePlayToggle();
+            }}
             onTimeUpdate={() => {
               if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
             }}
             onLoadedMetadata={() => {
-              if (videoRef.current) setDuration(videoRef.current.duration || 10);
+              if (videoRef.current) {
+                const d = videoRef.current.duration;
+                if (!isNaN(d) && isFinite(d) && d > 0) {
+                  setDuration(d);
+                }
+              }
             }}
             onEnded={() => setIsPlaying(false)}
-            className="w-full h-full object-contain"
+            onError={(e) => {
+              console.error('Video element load error:', e);
+              setVideoError(
+                'Unable to stream this video directly. The file might require specific browser codecs or allow-origin headers.'
+              );
+            }}
+            className="w-full h-full object-contain cursor-pointer"
           />
         )}
 
-        {/* Case 4: Broadcast Cinematic Canvas Engine (Default) */}
-        {!isDirectVideo && !isYoutube && !isVimeo && (
+        {/* Case 3: Broadcast Cinematic Canvas Engine (Default when no URL attached) */}
+        {parsedSource.type === 'procedural' && (
           <canvas
             ref={canvasRef}
             width={854}
             height={480}
             className="w-full h-full object-cover select-none cursor-pointer"
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={handlePlayToggle}
           />
         )}
 
-        {/* Center Big Play Button Overlay when paused */}
-        {!isPlaying && (
+        {/* Playback Error Overlay */}
+        {videoError && (
+          <div className="absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-sm p-6 flex flex-col items-center justify-center text-center">
+            <div className="h-12 w-12 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center mb-3">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <h4 className="text-sm font-bold text-white">Video Playback Notice</h4>
+            <p className="text-xs text-slate-400 max-w-sm mt-1 mb-4 leading-relaxed">
+              {videoError}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {parsedSource.directUrl && (
+                <a
+                  href={parsedSource.directUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Open Video in New Tab</span>
+                </a>
+              )}
+              {onOpenVideoManager && (
+                <button
+                  type="button"
+                  onClick={onOpenVideoManager}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors"
+                >
+                  <Upload className="h-3.5 w-3.5 text-blue-400" />
+                  <span>Re-upload / Change Video</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoError(null);
+                  if (videoRef.current) {
+                    videoRef.current.load();
+                    videoRef.current.play().catch(() => {});
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-400 hover:text-white"
+              >
+                <RefreshCw className="h-3 w-3" />
+                <span>Retry</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Center Big Play Button Overlay when paused (Direct or Procedural) */}
+        {!isPlaying && !videoError && !showNativeControls && (
           <button
             type="button"
-            onClick={() => setIsPlaying(true)}
-            className="absolute inset-0 m-auto h-16 w-16 rounded-full bg-slate-900/80 backdrop-blur-md border border-white/30 text-white flex items-center justify-center hover:bg-blue-600 transition-all shadow-2xl hover:scale-105 z-20"
+            onClick={handlePlayToggle}
+            className="absolute inset-0 m-auto h-16 w-16 rounded-full bg-slate-900/85 backdrop-blur-md border border-white/30 text-white flex items-center justify-center hover:bg-blue-600 transition-all shadow-2xl hover:scale-110 z-20"
             aria-label="Play commercial video"
           >
             <Play className="h-7 w-7 ml-1 fill-white" />
@@ -1053,7 +1231,7 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
           <button
             type="button"
             onClick={onOpenVideoManager}
-            className="absolute top-3 right-3 z-30 inline-flex items-center gap-1.5 rounded-lg bg-slate-950/80 backdrop-blur-md px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg hover:bg-blue-600 transition-colors border border-white/20 opacity-0 group-hover:opacity-100"
+            className="absolute top-3 right-3 z-30 inline-flex items-center gap-1.5 rounded-lg bg-slate-950/85 backdrop-blur-md px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg hover:bg-blue-600 transition-colors border border-white/20 opacity-0 group-hover:opacity-100"
             title="Upload custom MP4 or paste video URL"
           >
             <Upload className="h-3 w-3 text-blue-400" />
@@ -1061,104 +1239,145 @@ export const CommercialVideoPlayer: React.FC<CommercialVideoPlayerProps> = ({
           </button>
         )}
 
-        {/* Bottom Title Bar Badge */}
+        {/* Top-Left Title Bar & Platform Badge */}
         <div className="absolute top-3 left-3 z-20 flex items-center gap-2 pointer-events-none">
-          <span className="rounded bg-slate-950/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+          <span className="rounded bg-slate-950/85 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>{project.badge || 'Commercial Production'}</span>
+            <span>{parsedSource.label}</span>
           </span>
-          <span className="rounded bg-slate-950/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-slate-700 hidden sm:inline">
-            {project.impactMetric}
+          <span className="rounded bg-slate-950/85 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-slate-700 hidden sm:inline">
+            {project.badge || 'Commercial Production'}
           </span>
         </div>
       </div>
 
       {/* Control Bar */}
       <div className="bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-3 flex flex-col gap-2 shrink-0 z-20">
-        {/* Scrubber Progress Bar */}
-        <div
-          onClick={handleSeek}
-          className="relative h-1.5 w-full bg-slate-800 rounded-full cursor-pointer overflow-hidden group/bar"
-          title="Click to seek"
-        >
+        {/* Scrubber Progress Bar for Direct and Procedural Video */}
+        {(parsedSource.type === 'direct' || parsedSource.type === 'procedural') && (
           <div
-            className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all"
-            style={{ width: `${Math.min(100, (currentTime / (duration || 1)) * 100)}%` }}
-          />
-        </div>
+            onClick={handleSeek}
+            className="relative h-1.5 w-full bg-slate-800 rounded-full cursor-pointer overflow-hidden group/bar"
+            title="Click to seek"
+          >
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all"
+              style={{ width: `${Math.min(100, (currentTime / (duration || 1)) * 100)}%` }}
+            />
+          </div>
+        )}
 
         {/* Controls Strip */}
         <div className="flex items-center justify-between text-xs text-slate-300">
-          {/* Left: Play/Pause, Rewind, Time */}
+          {/* Left: Play/Pause, Rewind, Time, Mute */}
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (videoRef.current) {
-                  if (isPlaying) videoRef.current.pause();
-                  else videoRef.current.play();
-                }
-                setIsPlaying(!isPlaying);
-              }}
-              className="h-7 w-7 rounded-full bg-white text-slate-950 flex items-center justify-center hover:bg-slate-200 transition-colors"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? <Pause className="h-3.5 w-3.5 fill-slate-950" /> : <Play className="h-3.5 w-3.5 ml-0.5 fill-slate-950" />}
-            </button>
+            {(parsedSource.type === 'direct' || parsedSource.type === 'procedural') ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePlayToggle}
+                  className="h-7 w-7 rounded-full bg-white text-slate-950 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? (
+                    <Pause className="h-3.5 w-3.5 fill-slate-950" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 ml-0.5 fill-slate-950" />
+                  )}
+                </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentTime(0);
-                if (videoRef.current) videoRef.current.currentTime = 0;
-              }}
-              className="p-1 text-slate-400 hover:text-white transition-colors"
-              title="Restart from beginning"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentTime(0);
+                    if (videoRef.current) videoRef.current.currentTime = 0;
+                  }}
+                  className="p-1 text-slate-400 hover:text-white transition-colors"
+                  title="Restart from beginning"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
 
-            <div className="font-mono text-[11px] text-slate-300">
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </div>
+                <div className="font-mono text-[11px] text-slate-300">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </div>
 
-            {/* Audio Toggle with Web Audio Cinema Ambience */}
-            <button
-              type="button"
-              onClick={() => setIsMuted(!isMuted)}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                !isMuted ? 'bg-blue-600/30 text-blue-400 border border-blue-500/40' : 'text-slate-400 hover:text-white'
-              }`}
-              title={isMuted ? 'Unmute cinema sound' : 'Mute'}
-            >
-              {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5 text-blue-400" />}
-              <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Sound On'}</span>
-            </button>
+                {/* Audio Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIsMuted(!isMuted)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    !isMuted
+                      ? 'bg-blue-600/30 text-blue-400 border border-blue-500/40'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={isMuted ? 'Unmute video audio' : 'Mute audio'}
+                >
+                  {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5 text-blue-400" />}
+                  <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Sound On'}</span>
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span>{parsedSource.label}</span>
+                {parsedSource.embedUrl && (
+                  <a
+                    href={project.videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-400 hover:underline ml-1"
+                  >
+                    <span>Open External</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Right: Subtitles, HUD, Aspect Ratio, Fullscreen */}
+          {/* Right: Native Controls Toggle, Aspect Ratio, Fullscreen */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowSubtitles(!showSubtitles)}
-              className={`p-1.5 rounded transition-colors ${
-                showSubtitles ? 'text-amber-400 bg-amber-500/10' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Toggle Subtitles / Captions (CC)"
-            >
-              <Subtitles className="h-3.5 w-3.5" />
-            </button>
+            {parsedSource.type === 'direct' && (
+              <button
+                type="button"
+                onClick={() => setShowNativeControls(!showNativeControls)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                  showNativeControls
+                    ? 'border-blue-500 text-blue-400 bg-blue-500/10'
+                    : 'border-slate-800 text-slate-400 hover:text-white'
+                }`}
+                title="Toggle native browser video controls"
+              >
+                {showNativeControls ? 'Native: ON' : 'Native: OFF'}
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setShowHud(!showHud)}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors border ${
-                showHud ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-slate-500 border-slate-800'
-              }`}
-              title="Toggle Director Camera Telemetry HUD"
-            >
-              HUD
-            </button>
+            {parsedSource.type === 'procedural' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowSubtitles(!showSubtitles)}
+                  className={`p-1.5 rounded transition-colors ${
+                    showSubtitles ? 'text-amber-400 bg-amber-500/10' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Toggle Subtitles / Captions (CC)"
+                >
+                  <Subtitles className="h-3.5 w-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHud(!showHud)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors border ${
+                    showHud ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-slate-500 border-slate-800'
+                  }`}
+                  title="Toggle Director Camera Telemetry HUD"
+                >
+                  HUD
+                </button>
+              </>
+            )}
 
             <button
               type="button"

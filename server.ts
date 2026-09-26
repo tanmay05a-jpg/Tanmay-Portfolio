@@ -19,6 +19,10 @@ const DATA_DIR = path.resolve(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+const UPLOADS_DIR = path.resolve(DATA_DIR, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 const PORTFOLIO_FILE = path.join(DATA_DIR, 'live-portfolio.json');
 const ADMIN_FILE = path.join(DATA_DIR, 'admin-config.json');
 
@@ -73,8 +77,70 @@ function verifyAdminRequest(req: express.Request): boolean {
 }
 
 // Body parsers with large limit for base64 images and audio blobs
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Static route for uploaded video and media files with full HTTP Range request support for smooth streaming
+app.use('/api/media', express.static(UPLOADS_DIR, {
+  acceptRanges: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.mp4')) {
+      res.setHeader('Content-Type', 'video/mp4');
+    } else if (filePath.endsWith('.webm')) {
+      res.setHeader('Content-Type', 'video/webm');
+    } else if (filePath.endsWith('.mov')) {
+      res.setHeader('Content-Type', 'video/quicktime');
+    }
+  }
+}));
+
+// Endpoint for permanent video / media file upload
+app.post('/api/upload-media', (req, res) => {
+  try {
+    if (!verifyAdminRequest(req)) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Admin credentials required to upload media files.',
+      });
+    }
+
+    const { filename, base64Data, mimeType } = req.body;
+    if (!base64Data) {
+      return res.status(400).json({ success: false, error: 'base64Data is required' });
+    }
+
+    // Strip data URI prefix if present
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+
+    let ext = filename ? path.extname(filename).toLowerCase() : '';
+    if (!ext) {
+      if (mimeType?.includes('webm')) ext = '.webm';
+      else if (mimeType?.includes('quicktime') || mimeType?.includes('mov')) ext = '.mov';
+      else if (mimeType?.includes('mp4')) ext = '.mp4';
+      else if (mimeType?.includes('png')) ext = '.png';
+      else if (mimeType?.includes('jpeg') || mimeType?.includes('jpg')) ext = '.jpg';
+      else ext = '.mp4';
+    }
+
+    const safeName = `media-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+    const filePath = path.join(UPLOADS_DIR, safeName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const publicUrl = `/api/media/${safeName}`;
+    return res.json({
+      success: true,
+      url: publicUrl,
+      filename: safeName,
+      size: buffer.length,
+      message: 'Media file uploaded and stored permanently.',
+    });
+  } catch (err: any) {
+    console.error('Error handling media upload:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Media upload failed' });
+  }
+});
 
 // Shared Gemini client configured with telemetry header per guidelines
 const ai = new GoogleGenAI({

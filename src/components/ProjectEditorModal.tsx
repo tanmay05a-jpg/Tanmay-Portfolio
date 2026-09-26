@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Check, Sparkles, ExternalLink, Film, Video } from 'lucide-react';
+import { X, Plus, Trash2, Check, Sparkles, ExternalLink, Film, Video, CheckCircle2 } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { PortfolioProject } from '../data/portfolioData';
+import { parseVideoSource } from './CommercialVideoPlayer';
 
 const SERVICE_OPTIONS = [
   'Advertisement / Commercial Video Creative',
@@ -21,7 +22,15 @@ const BADGE_OPTIONS = [
 ];
 
 export const ProjectEditorModal: React.FC = () => {
-  const { editingProject, setEditingProject, addProject, updateProject, deleteProject } = usePortfolio();
+  const {
+    editingProject,
+    setEditingProject,
+    addProject,
+    updateProject,
+    deleteProject,
+    uploadMediaFile,
+    showToast,
+  } = usePortfolio();
 
   const isNew = editingProject === 'new';
   const existingProject = typeof editingProject === 'object' ? editingProject : null;
@@ -314,23 +323,25 @@ export const ProjectEditorModal: React.FC = () => {
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                   Upload Video File (.mp4, .webm, .mov)
                 </label>
-                <label className="cursor-pointer flex items-center justify-center p-2 rounded-lg border border-dashed border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs transition-colors">
-                  <span>{formData.videoUrl?.startsWith('data:') || formData.videoUrl?.startsWith('blob:') ? '✓ Video File Uploaded' : 'Choose Video File'}</span>
+                <label className="cursor-pointer flex items-center justify-center p-2.5 rounded-lg border border-dashed border-blue-300 bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs transition-colors">
+                  <span>
+                    {formData.videoUrl?.startsWith('/api/media/')
+                      ? '✓ Video Stored on Server'
+                      : formData.videoUrl?.startsWith('data:') || formData.videoUrl?.startsWith('blob:')
+                      ? '✓ Video File Uploaded'
+                      : 'Choose Video File (.mp4 / .webm)'}
+                  </span>
                   <input
                     type="file"
                     accept="video/mp4,video/webm,video/quicktime"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      if (file.size < 8 * 1024 * 1024) {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          setFormData({ ...formData, videoUrl: reader.result as string });
-                        };
-                        reader.readAsDataURL(file);
-                      } else {
-                        const blobUrl = URL.createObjectURL(file);
-                        setFormData({ ...formData, videoUrl: blobUrl });
+                      showToast(`Uploading video "${file.name}" to server...`);
+                      const res = await uploadMediaFile(file);
+                      if (res.url) {
+                        setFormData({ ...formData, videoUrl: res.url });
+                        showToast(`Video "${file.name}" uploaded successfully!`);
                       }
                     }}
                     className="hidden"
@@ -340,15 +351,23 @@ export const ProjectEditorModal: React.FC = () => {
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Or Video URL (YouTube, Vimeo, MP4 link)
+                  Or Video URL (YouTube Shorts, YouTube, Vimeo, Loom, Google Drive, MP4 link)
                 </label>
                 <input
                   type="url"
                   value={formData.videoUrl || ''}
                   onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/... or https://.../video.mp4"
+                  placeholder="https://www.youtube.com/shorts/... or https://.../video.mp4"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:outline-none font-mono"
                 />
+                {formData.videoUrl && (
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                    <span>
+                      Detected: <strong>{parseVideoSource(formData.videoUrl).label}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>

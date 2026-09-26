@@ -51,10 +51,81 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
 
   // Bespoke illustrative visual component for projects on clean light background
   const renderProjectVisual = (project: PortfolioProject) => {
-    // If a custom image or screenshot was uploaded for this project
+    // If it has videoUrl or videoDetails
+    if (project.videoUrl || project.videoDetails) {
+      return (
+        <div
+          onClick={() => setSelectedProject(project)}
+          className="h-52 w-full bg-slate-950 text-white flex flex-col justify-between overflow-hidden relative border-b border-slate-200 group-hover:bg-slate-900 transition-colors cursor-pointer select-none"
+        >
+          {/* Cinema visual snapshot gradient or custom poster */}
+          {project.imageUrl || project.videoPoster ? (
+            <img
+              src={project.imageUrl || project.videoPoster}
+              alt={project.title}
+              className="absolute inset-0 h-full w-full object-cover opacity-60 group-hover:opacity-75 transition-opacity group-hover:scale-105 duration-500"
+            />
+          ) : (
+            <div
+              className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity"
+              style={{
+                background:
+                  project.id === '7-seconds-psychology-ad'
+                    ? 'radial-gradient(circle at 70% 30%, #10b981 0%, #0f172a 70%)'
+                    : project.id === 'indori-poha-togetherness-ad'
+                    ? 'radial-gradient(circle at 50% 40%, #eab308 0%, #451a03 75%)'
+                    : project.id === 'kulhad-chai-conversations'
+                    ? 'radial-gradient(circle at 60% 40%, #ea580c 0%, #1c130d 75%)'
+                    : project.id === 'chhappan-dukan-twilight'
+                    ? 'radial-gradient(circle at 50% 30%, #a855f7 0%, #0f172a 75%)'
+                    : 'radial-gradient(circle at 50% 40%, #2563eb 0%, #0f172a 75%)',
+              }}
+            />
+          )}
+
+          <div className="flex items-center justify-between text-xs text-slate-300 relative z-10 p-3 pb-0">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="font-mono text-[11px] text-red-400 uppercase tracking-wider font-semibold">
+                {project.videoUrl ? 'Video Attached' : (project.videoDetails?.type === 'short_ad' ? 'Viral Video Ad' : 'Commercial Cut')}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-300 font-mono bg-slate-900/90 px-2 py-0.5 rounded border border-slate-700">
+              {project.videoDetails?.duration || '0:30'}
+            </span>
+          </div>
+
+          {/* Center Play Button Overlay */}
+          <div className="relative z-10 flex flex-col items-center justify-center my-1 group-hover:scale-110 transition-transform">
+            <div className="h-12 w-12 rounded-full bg-blue-600/90 backdrop-blur-md border border-white/40 flex items-center justify-center shadow-xl group-hover:bg-blue-500 transition-colors">
+              <Play className="h-5 w-5 ml-0.5 fill-white text-white" />
+            </div>
+            <span className="mt-1.5 text-[10px] font-bold text-white tracking-wide uppercase font-mono bg-black/80 px-2 py-0.5 rounded border border-white/10">
+              ▶ Watch Commercial Video
+            </span>
+          </div>
+
+          {/* Video script quote and aesthetic framing */}
+          <div className="relative z-10 px-3 pb-2.5">
+            <div className="p-2 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 italic line-clamp-1">
+              "{project.videoDetails?.scriptExcerpt || project.tagline || project.summary}"
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1.5 font-mono">
+              <span className="text-emerald-400 font-bold">{project.impactMetric}</span>
+              <span>{project.timeline}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // If a custom image or screenshot was uploaded for this project (non-video)
     if (project.imageUrl) {
       return (
-        <div className="h-48 w-full bg-slate-900 overflow-hidden relative border-b border-slate-200 group-hover:opacity-95 transition-opacity">
+        <div
+          onClick={() => setSelectedProject(project)}
+          className="h-48 w-full bg-slate-900 overflow-hidden relative border-b border-slate-200 group-hover:opacity-95 transition-opacity cursor-pointer"
+        >
           <img
             src={project.imageUrl}
             alt={project.title}
@@ -64,63 +135,6 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
             <span className="rounded bg-slate-950/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-mono text-white border border-white/20">
               {project.badge}
             </span>
-          </div>
-        </div>
-      );
-    }
-
-    // If it's one of Tanmay's video production works
-    if (project.videoDetails) {
-      return (
-        <div className="h-52 w-full bg-slate-950 text-white flex flex-col justify-between overflow-hidden relative border-b border-slate-200 group-hover:bg-slate-900 transition-colors">
-          {/* Cinema visual snapshot gradient */}
-          <div
-            className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity"
-            style={{
-              background:
-                project.id === '7-seconds-psychology-ad'
-                  ? 'radial-gradient(circle at 70% 30%, #10b981 0%, #0f172a 70%)'
-                  : project.id === 'indori-poha-togetherness-ad'
-                  ? 'radial-gradient(circle at 50% 40%, #eab308 0%, #451a03 75%)'
-                  : project.id === 'kulhad-chai-conversations'
-                  ? 'radial-gradient(circle at 60% 40%, #ea580c 0%, #1c130d 75%)'
-                  : project.id === 'chhappan-dukan-twilight'
-                  ? 'radial-gradient(circle at 50% 30%, #a855f7 0%, #0f172a 75%)'
-                  : 'radial-gradient(circle at 50% 40%, #f59e0b 0%, #1c1917 75%)',
-            }}
-          />
-
-          <div className="flex items-center justify-between text-xs text-slate-300 relative z-10 p-3 pb-0">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="font-mono text-[11px] text-red-400 uppercase tracking-wider font-semibold">
-                {project.videoDetails.type === 'short_ad' ? 'Viral Video Ad' : 'Commercial Cut'}
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-300 font-mono bg-slate-900/90 px-2 py-0.5 rounded border border-slate-700">
-              {project.videoDetails.duration}
-            </span>
-          </div>
-
-          {/* Center Play Button Overlay */}
-          <div className="relative z-10 flex flex-col items-center justify-center my-1 group-hover:scale-105 transition-transform">
-            <div className="h-11 w-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center shadow-lg group-hover:bg-blue-600 transition-colors">
-              <Play className="h-5 w-5 ml-0.5 fill-white text-white" />
-            </div>
-            <span className="mt-1.5 text-[10px] font-bold text-white tracking-wide uppercase font-mono bg-black/70 px-2 py-0.5 rounded">
-              Watch Commercial Reel
-            </span>
-          </div>
-
-          {/* Video script quote and aesthetic framing */}
-          <div className="relative z-10 px-3 pb-2.5">
-            <div className="p-2 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 italic line-clamp-1">
-              "{project.videoDetails.scriptExcerpt}"
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1.5 font-mono">
-              <span className="text-emerald-400 font-bold">{project.impactMetric}</span>
-              <span>{project.timeline}</span>
-            </div>
           </div>
         </div>
       );
@@ -474,7 +488,10 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
                     )}
                   </div>
 
-                  <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">
+                  <h3
+                    onClick={() => setSelectedProject(project)}
+                    className="mt-2 text-xl font-bold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors cursor-pointer"
+                  >
                     {project.title}
                   </h3>
 
@@ -500,15 +517,26 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
               <div className="px-6 pb-6 pt-2 flex items-center gap-2">
                 <button
                   onClick={() => setSelectedProject(project)}
-                  className="flex-1 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100 whitespace-nowrap"
+                  className={`flex-1 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                    project.videoUrl || project.videoDetails
+                      ? 'bg-blue-600 text-white hover:bg-blue-500 font-bold shadow-xs'
+                      : 'border border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100'
+                  }`}
                 >
-                  <span>
-                    {project.videoDetails ? 'Inspect commercial brief & script' : 'Inspect full project brief'}
-                  </span>
-                  <ExternalLink className="ml-1.5 h-3.5 w-3.5 text-slate-500" />
+                  {(project.videoUrl || project.videoDetails) ? (
+                    <>
+                      <Play className="mr-1.5 h-3.5 w-3.5 fill-white text-white" />
+                      <span>Watch Commercial Video</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Inspect Project Brief</span>
+                      <ExternalLink className="ml-1.5 h-3.5 w-3.5 text-slate-500" />
+                    </>
+                  )}
                 </button>
 
-                {project.videoDetails && (
+                {(project.videoDetails || project.videoUrl) && isAdminAuthenticated && isEditMode && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -571,41 +599,47 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOpenBookin
               )}
 
               {/* Video Specific Section in Modal */}
-              {selectedProject.videoDetails && (
+              {(selectedProject.videoDetails || selectedProject.videoUrl) && (
                 <div className="mt-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider font-mono">
                       <Film className="h-4 w-4 text-blue-600" />
-                      <span>Watch Broadcast Commercial Video</span>
+                      <span>Watch Commercial Video</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsVideoManagerOpen(true)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
-                    >
-                      <Upload className="h-3 w-3" />
-                      <span>Upload / Change Video</span>
-                    </button>
+                    {isAdminAuthenticated && (
+                      <button
+                        type="button"
+                        onClick={() => setIsVideoManagerOpen(true)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
+                      >
+                        <Upload className="h-3 w-3" />
+                        <span>Upload / Change Video</span>
+                      </button>
+                    )}
                   </div>
 
                   <CommercialVideoPlayer
                     project={selectedProject}
-                    onOpenVideoManager={() => setIsVideoManagerOpen(true)}
+                    onOpenVideoManager={isAdminAuthenticated ? () => setIsVideoManagerOpen(true) : undefined}
                     autoPlay={true}
                   />
 
                   <div className="rounded-xl bg-slate-900 text-white p-4 space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-mono text-red-400">● Broadcast Script &amp; Direction</span>
-                      <span className="font-mono text-slate-300">{selectedProject.videoDetails.duration}</span>
+                      <span className="font-mono text-red-400">● Commercial Production &amp; Direction</span>
+                      <span className="font-mono text-slate-300">
+                        {selectedProject.videoDetails?.duration || '0:30'}
+                      </span>
                     </div>
                     <div className="p-3 bg-slate-800/80 rounded border border-slate-700 text-xs italic text-slate-200 leading-relaxed">
-                      "{selectedProject.videoDetails.scriptExcerpt}"
+                      "{selectedProject.videoDetails?.scriptExcerpt || selectedProject.tagline || selectedProject.summary || 'Commercial broadcast script'}"
                     </div>
-                    <div className="pt-1 text-[11px] text-slate-400">
-                      <span className="font-semibold text-slate-300">Cinematography Style: </span>
-                      {selectedProject.videoDetails.videoStyle}
-                    </div>
+                    {selectedProject.videoDetails?.videoStyle && (
+                      <div className="pt-1 text-[11px] text-slate-400">
+                        <span className="font-semibold text-slate-300">Cinematography Style: </span>
+                        {selectedProject.videoDetails.videoStyle}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

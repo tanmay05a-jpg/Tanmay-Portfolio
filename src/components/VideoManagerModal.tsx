@@ -11,9 +11,12 @@ import {
   Video,
   FileVideo,
   Info,
+  CheckCircle2,
+  ExternalLink,
 } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { PortfolioProject } from '../data/portfolioData';
+import { parseVideoSource, CommercialVideoPlayer } from './CommercialVideoPlayer';
 
 interface VideoManagerModalProps {
   isOpen: boolean;
@@ -26,7 +29,7 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
   onClose,
   defaultProjectId,
 }) => {
-  const { projects, updateProject, showToast, setEditingProject } = usePortfolio();
+  const { projects, updateProject, showToast, setEditingProject, uploadMediaFile } = usePortfolio();
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     defaultProjectId || projects[0]?.id || ''
@@ -99,8 +102,8 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
     );
   }
 
-  // Handle local video file upload (.mp4, .webm)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle local video file upload (.mp4, .webm, .mov)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -110,48 +113,61 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
     }
 
     setIsUploading(true);
+    showToast(`Uploading video "${file.name}" to server...`);
 
-    // If file is small (< 8MB), base64 is stored; else create object URL
-    if (file.size < 8 * 1024 * 1024) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        setVideoUrlInput(result);
-        setIsUploading(false);
-        showToast(`Video "${file.name}" uploaded successfully!`);
-      };
-      reader.onerror = () => {
-        setIsUploading(false);
-        showToast('Failed to read video file.');
-      };
-      reader.readAsDataURL(file);
-    } else {
-      // Use local blob URL for session playback
-      const objectUrl = URL.createObjectURL(file);
-      setVideoUrlInput(objectUrl);
+    const result = await uploadMediaFile(file);
+    if (result.success && result.url) {
+      setVideoUrlInput(result.url);
       setIsUploading(false);
-      showToast(`Large video loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB). Ready for playback.`);
+      showToast(`Video "${file.name}" uploaded and stored permanently!`);
+    } else {
+      if (result.url) {
+        setVideoUrlInput(result.url);
+        setIsUploading(false);
+        showToast(`Video loaded in session. Click Save.`);
+      } else {
+        const objectUrl = URL.createObjectURL(file);
+        setVideoUrlInput(objectUrl);
+        setIsUploading(false);
+        showToast('Video loaded from file.');
+      }
     }
   };
 
   // Save changes to PortfolioContext
   const handleSave = () => {
+    const cleanUrl = videoUrlInput.trim();
     const updated: PortfolioProject = {
       ...activeProject,
-      videoUrl: videoUrlInput.trim() || undefined,
+      videoUrl: cleanUrl || undefined,
       aspectRatio,
+      serviceCategory:
+        activeProject.serviceCategory === 'Advertisement / Commercial Video Creative'
+          ? activeProject.serviceCategory
+          : activeProject.serviceCategory || 'Advertisement / Commercial Video Creative',
+      badge: activeProject.badge || 'Commercial Production',
       videoDetails: {
         type: activeProject.videoDetails?.type || 'commercial',
-        scriptExcerpt: scriptExcerpt.trim() || (activeProject.videoDetails?.scriptExcerpt || activeProject.summary || 'Commercial broadcast script'),
-        duration: durationInput.trim() || (activeProject.videoDetails?.duration || '0:30'),
-        keyThemes: activeProject.videoDetails?.keyThemes || ['Brand Vision', 'Creative Direction'],
-        videoStyle: activeProject.videoDetails?.videoStyle || 'Cinematic direction with high-impact visuals and sound design',
-        highlights: activeProject.videoDetails?.highlights || ['Dynamic storytelling', 'Broadcast framing', 'Color graded visual flow'],
+        scriptExcerpt:
+          scriptExcerpt.trim() ||
+          activeProject.videoDetails?.scriptExcerpt ||
+          activeProject.summary ||
+          'Commercial broadcast script and direction',
+        duration: durationInput.trim() || activeProject.videoDetails?.duration || '0:30',
+        keyThemes: activeProject.videoDetails?.keyThemes || ['Commercial Ad', 'Brand Direction'],
+        videoStyle:
+          activeProject.videoDetails?.videoStyle ||
+          'Cinematic direction with high-impact visuals and sound design',
+        highlights: activeProject.videoDetails?.highlights || [
+          'Dynamic storytelling',
+          'Broadcast framing',
+          'Color graded visual flow',
+        ],
       },
     };
 
     updateProject(updated);
-    showToast(`Updated video configuration for "${activeProject.title}"`);
+    showToast(`Saved video for "${activeProject.title}"! Changes published live.`);
     onClose();
   };
 
@@ -263,7 +279,7 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
             {/* Or Paste Link */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Option B: Paste Video URL (YouTube, Vimeo, or Direct MP4 link)
+                Option B: Paste Video URL (YouTube Shorts, YouTube, Vimeo, Loom, Google Drive, or Direct MP4 link)
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -272,8 +288,8 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
                     type="url"
                     value={videoUrlInput}
                     onChange={(e) => setVideoUrlInput(e.target.value)}
-                    placeholder="https://www.youtube.com/watch?v=... or https://.../video.mp4"
-                    className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://www.youtube.com/shorts/... or https://.../video.mp4"
+                    className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                   />
                 </div>
                 {videoUrlInput && (
@@ -286,7 +302,48 @@ export const VideoManagerModal: React.FC<VideoManagerModalProps> = ({
                   </button>
                 )}
               </div>
+
+              {videoUrlInput && (
+                <div className="mt-2 flex items-center justify-between p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>
+                      Detected Video Source: <strong>{parseVideoSource(videoUrlInput).label}</strong>
+                    </span>
+                  </div>
+                  {videoUrlInput.startsWith('/api/media/') && (
+                    <span className="text-[10px] font-mono bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-950 font-bold">
+                      Saved to Server
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Live Test Preview Player */}
+            {videoUrlInput && (
+              <div className="pt-2">
+                <div className="text-xs font-bold text-slate-900 mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Play className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Instant Live Playback Test</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-normal">
+                    Verify video plays before saving
+                  </span>
+                </div>
+                <div className="rounded-xl overflow-hidden border border-slate-300 bg-black">
+                  <CommercialVideoPlayer
+                    project={{
+                      ...activeProject,
+                      videoUrl: videoUrlInput,
+                      aspectRatio,
+                    }}
+                    autoPlay={false}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Procedural simulation note */}
             <div className="flex items-start gap-2.5 p-3 rounded-lg bg-blue-50 border border-blue-100 text-xs text-blue-900">

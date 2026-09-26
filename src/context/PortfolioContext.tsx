@@ -57,6 +57,8 @@ interface PortfolioContextType {
   // Toast
   toastMessage: string | null;
   showToast: (msg: string) => void;
+  // Media Upload
+  uploadMediaFile: (file: File) => Promise<{ success: boolean; url?: string; error?: string }>;
 }
 
 const STORAGE_KEY = 'tanmay_portfolio_state_v2';
@@ -130,7 +132,23 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [isAdminAuthenticated, showToast]
   );
 
-  // Save to LocalStorage helper
+  // Helper to safely strip huge base64 data URIs for localStorage cache
+  const sanitizeForLocalStorage = (payload: any) => {
+    try {
+      return JSON.parse(
+        JSON.stringify(payload, (key, value) => {
+          if (typeof value === 'string' && value.startsWith('data:') && value.length > 15000) {
+            return undefined; // avoid exceeding localStorage 5MB quota
+          }
+          return value;
+        })
+      );
+    } catch {
+      return payload;
+    }
+  };
+
+  // Save to LocalStorage helper with QuotaExceededError safety
   const saveToStorage = useCallback(
     (
       nextProfile: ProfileData,
@@ -148,9 +166,35 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           faqs: nextFaqs,
           updatedAt: new Date().toISOString(),
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      } catch (err) {
-        console.error('Failed to save to localStorage', err);
+        const sanitized = sanitizeForLocalStorage(payload);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+      } catch (err: any) {
+        // If quota is exceeded, clear old keys and attempt to save lightweight version
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k !== STORAGE_KEY && k !== ADMIN_TOKEN_KEY && k.startsWith('tanmay_')) {
+              localStorage.removeItem(k);
+            }
+          }
+          const minimalProjects = nextProjects.map((p) => ({
+            ...p,
+            imageUrl: p.imageUrl?.startsWith('data:') ? undefined : p.imageUrl,
+            videoUrl: p.videoUrl?.startsWith('data:') ? undefined : p.videoUrl,
+          }));
+          const minimalPayload = {
+            profile: nextProfile,
+            services: nextServices,
+            projects: minimalProjects,
+            pricing: nextPricing,
+            faqs: nextFaqs,
+            updatedAt: new Date().toISOString(),
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(minimalPayload));
+        } catch {
+          // If browser storage quota is completely exhausted, gracefully ignore since
+          // the primary source of truth is the live backend server (/api/portfolio)
+        }
       }
     },
     []
@@ -568,6 +612,42 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Upload Media File (Video / Audio / Image) to persistent server storage
+  const uploadMediaFile = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
+    try {
+      const token = adminToken || localStorage.getItem(ADMIN_TOKEN_KEY);
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch('/api/upload-media', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          filename: file.name,
+          mimeType: file.type,
+          base64Data,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.url) {
+        return { success: true, url: data.url };
+      }
+      // If server returned error, fallback to data url for session
+      return { success: false, url: base64Data, error: data.error || 'Server upload failed' };
+    } catch (err: any) {
+      console.warn('Media upload failed, using fallback:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   return (
     <PortfolioContext.Provider
       value={{
@@ -605,6 +685,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         importFromJson,
         toastMessage,
         showToast,
+        uploadMediaFile,
       }}
     >
       {children}
